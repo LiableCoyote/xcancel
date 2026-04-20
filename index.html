@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X → XCancel link converter</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0f1419;
+    --panel: #16202a;
+    --fg: #e7e9ea;
+    --muted: #8b98a5;
+    --accent: #1d9bf0;
+    --border: #2f3a44;
+    --error: #f4212e;
+    --ok: #00ba7c;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #ffffff;
+      --panel: #f7f9f9;
+      --fg: #0f1419;
+      --muted: #536471;
+      --accent: #1d9bf0;
+      --border: #eff3f4;
+      --error: #f4212e;
+      --ok: #00ba7c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    display: flex;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  main {
+    width: 100%;
+    max-width: 640px;
+  }
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 .25rem;
+  }
+  p.sub {
+    margin: 0 0 1.5rem;
+    color: var(--muted);
+    font-size: .95rem;
+  }
+  label {
+    display: block;
+    font-size: .85rem;
+    color: var(--muted);
+    margin-bottom: .4rem;
+  }
+  textarea {
+    width: 100%;
+    min-height: 90px;
+    padding: .75rem .9rem;
+    font: inherit;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .95rem;
+    color: var(--fg);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    resize: vertical;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea[readonly] { cursor: text; }
+  .row {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    margin-top: .5rem;
+  }
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: .55rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--accent);
+    color: white;
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+  }
+  button.secondary, .open-btn {
+    background: transparent;
+    color: var(--fg);
+  }
+  .open-btn {
+    display: inline-block;
+    text-decoration: none;
+    font: inherit;
+    font-weight: 600;
+    padding: .55rem 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    line-height: 1;
+  }
+  .status {
+    font-size: .85rem;
+    min-height: 1.2em;
+    margin-top: .4rem;
+  }
+  .status.error { color: var(--error); }
+  .status.ok { color: var(--ok); }
+  section { margin-bottom: 1.25rem; }
+  footer {
+    margin-top: 2rem;
+    color: var(--muted);
+    font-size: .8rem;
+  }
+  code {
+    background: var(--panel);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: .85em;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>X → XCancel</h1>
+  <p class="sub">Paste an X (Twitter) link; get the XCancel equivalent.</p>
+
+  <section>
+    <label for="input">X URL</label>
+    <textarea id="input" autofocus spellcheck="false"
+      placeholder="https://x.com/user/status/1234567890"></textarea>
+    <div id="inputStatus" class="status error" role="alert"></div>
+  </section>
+
+  <section>
+    <label for="output">XCancel URL</label>
+    <textarea id="output" readonly spellcheck="false"
+      placeholder="xcancel.com link will appear here"></textarea>
+    <div class="row">
+      <button id="copyBtn" type="button" disabled>Copy</button>
+      <a id="openLink" hidden target="_blank" rel="noopener noreferrer"
+         role="button" class="open-btn">Open</a>
+      <span id="copyStatus" class="status ok"></span>
+    </div>
+  </section>
+
+  <footer>
+    Supported hosts: <code>x.com</code>, <code>twitter.com</code>,
+    <code>mobile.twitter.com</code>, <code>m.x.com</code>.
+    Tracking params (<code>s</code>, <code>t</code>, <code>ref_src</code>,
+    <code>ref_url</code>, <code>cxt</code>) are stripped.
+  </footer>
+</main>
+
+<script>
+  const X_HOSTS = new Set([
+    "x.com", "www.x.com", "m.x.com",
+    "twitter.com", "www.twitter.com", "mobile.twitter.com",
+  ]);
+  const TRACKING_PARAMS = ["s", "t", "ref_src", "ref_url", "cxt"];
+
+  function convert(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) return { ok: false, error: "" };
+    const withScheme = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : "https://" + trimmed;
+    let url;
+    try { url = new URL(withScheme); }
+    catch { return { ok: false, error: "Not a valid URL" }; }
+    if (!X_HOSTS.has(url.hostname.toLowerCase()))
+      return { ok: false, error: "Unsupported host: " + url.hostname };
+    url.hostname = "xcancel.com";
+    url.protocol = "https:";
+    for (const p of TRACKING_PARAMS) url.searchParams.delete(p);
+    return { ok: true, value: url.toString() };
+  }
+
+  const input = document.getElementById("input");
+  const output = document.getElementById("output");
+  const inputStatus = document.getElementById("inputStatus");
+  const copyBtn = document.getElementById("copyBtn");
+  const copyStatus = document.getElementById("copyStatus");
+  const openLink = document.getElementById("openLink");
+
+  function render() {
+    const result = convert(input.value);
+    if (result.ok) {
+      output.value = result.value;
+      inputStatus.textContent = "";
+      copyBtn.disabled = false;
+      openLink.href = result.value;
+      openLink.hidden = false;
+    } else {
+      output.value = "";
+      inputStatus.textContent = result.error;
+      copyBtn.disabled = true;
+      openLink.hidden = true;
+      openLink.removeAttribute("href");
+    }
+    copyStatus.textContent = "";
+  }
+
+  input.addEventListener("input", render);
+  input.addEventListener("paste", () => setTimeout(render, 0));
+
+  copyBtn.addEventListener("click", async () => {
+    if (!output.value) return;
+    try {
+      await navigator.clipboard.writeText(output.value);
+      copyStatus.textContent = "Copied!";
+    } catch {
+      output.select();
+      document.execCommand("copy");
+      copyStatus.textContent = "Copied!";
+    }
+    setTimeout(() => { copyStatus.textContent = ""; }, 1200);
+  });
+</script>
+</body>
+</html>
