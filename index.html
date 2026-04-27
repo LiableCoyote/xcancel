@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>X → XCancel link converter</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<title>Link converter — XCancel & Wayback</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -15,6 +17,8 @@
     --border: #2f3a44;
     --error: #f4212e;
     --ok: #00ba7c;
+    --badge-bg: #1d9bf022;
+    --badge-fg: #1d9bf0;
   }
   @media (prefers-color-scheme: light) {
     :root {
@@ -26,9 +30,12 @@
       --border: #eff3f4;
       --error: #f4212e;
       --ok: #00ba7c;
+      --badge-bg: #1d9bf01a;
+      --badge-fg: #0c7abf;
     }
   }
   * { box-sizing: border-box; }
+  html, body { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
     min-height: 100vh;
@@ -38,7 +45,7 @@
     color: var(--fg);
     display: flex;
     justify-content: center;
-    padding: 2rem 1rem;
+    padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom));
   }
   main {
     width: 100%;
@@ -53,62 +60,78 @@
     color: var(--muted);
     font-size: .95rem;
   }
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .4rem;
+  }
   label {
-    display: block;
     font-size: .85rem;
     color: var(--muted);
-    margin-bottom: .4rem;
   }
   textarea {
     width: 100%;
-    min-height: 90px;
+    min-height: 72px;
     padding: .75rem .9rem;
     font: inherit;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: .95rem;
+    font-size: 16px;
     color: var(--fg);
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 12px;
     resize: vertical;
     outline: none;
+    word-break: break-all;
   }
   textarea:focus { border-color: var(--accent); }
   textarea[readonly] { cursor: text; }
   .row {
     display: flex;
+    flex-wrap: wrap;
     gap: .5rem;
     align-items: center;
-    margin-top: .5rem;
+    margin-top: .6rem;
   }
-  button {
+  button, .btn {
     font: inherit;
     font-weight: 600;
-    padding: .55rem 1rem;
+    font-size: 1rem;
+    min-height: 44px;
+    padding: .55rem 1.1rem;
     border-radius: 999px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent);
     background: var(--accent);
     color: white;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    line-height: 1;
   }
   button:disabled {
     opacity: .5;
     cursor: not-allowed;
   }
-  button.secondary, .open-btn {
+  .btn.secondary {
     background: transparent;
     color: var(--fg);
+    border-color: var(--border);
   }
-  .open-btn {
+  .badge {
     display: inline-block;
-    text-decoration: none;
-    font: inherit;
+    font-size: .75rem;
     font-weight: 600;
-    padding: .55rem 1rem;
+    color: var(--badge-fg);
+    background: var(--badge-bg);
+    padding: .15rem .55rem;
     border-radius: 999px;
-    border: 1px solid var(--border);
-    line-height: 1;
+    letter-spacing: .02em;
   }
+  .badge[hidden] { display: none; }
   .status {
     font-size: .85rem;
     min-height: 1.2em;
@@ -121,44 +144,66 @@
     margin-top: 2rem;
     color: var(--muted);
     font-size: .8rem;
+    line-height: 1.5;
   }
   code {
     background: var(--panel);
     padding: 1px 5px;
     border-radius: 4px;
     font-size: .85em;
+    word-break: break-all;
+  }
+  @media (max-width: 380px) {
+    body { padding: 1rem .75rem; }
+    h1 { font-size: 1.25rem; }
+    .row .btn, .row button { flex: 1 1 auto; }
   }
 </style>
 </head>
 <body>
 <main>
-  <h1>X → XCancel</h1>
-  <p class="sub">Paste an X (Twitter) link; get the XCancel equivalent.</p>
+  <h1>Link converter</h1>
+  <p class="sub">
+    Paste an X (Twitter) post or any web/news article URL.
+    X links become <code>xcancel.com</code>; everything else gets a
+    Wayback Machine snapshot link.
+  </p>
 
   <section>
-    <label for="input">X URL</label>
-    <textarea id="input" autofocus spellcheck="false"
-      placeholder="https://x.com/user/status/1234567890"></textarea>
+    <div class="label-row">
+      <label for="input">URL</label>
+    </div>
+    <textarea id="input" autofocus
+      type="url" inputmode="url"
+      autocapitalize="off" autocorrect="off" spellcheck="false"
+      placeholder="https://x.com/user/status/… or https://example.com/article"></textarea>
     <div id="inputStatus" class="status error" role="alert"></div>
   </section>
 
   <section>
-    <label for="output">XCancel URL</label>
+    <div class="label-row">
+      <label for="output">Converted</label>
+      <span id="kind" class="badge" hidden></span>
+    </div>
     <textarea id="output" readonly spellcheck="false"
-      placeholder="xcancel.com link will appear here"></textarea>
+      placeholder="The converted link will appear here"></textarea>
     <div class="row">
       <button id="copyBtn" type="button" disabled>Copy</button>
-      <a id="openLink" hidden target="_blank" rel="noopener noreferrer"
-         role="button" class="open-btn">Open</a>
-      <span id="copyStatus" class="status ok"></span>
+      <a id="openLink" class="btn secondary" hidden
+         target="_blank" rel="noopener noreferrer">Open</a>
+      <span id="copyStatus" class="status ok" style="margin-top:0;"></span>
     </div>
   </section>
 
   <footer>
-    Supported hosts: <code>x.com</code>, <code>twitter.com</code>,
-    <code>mobile.twitter.com</code>, <code>m.x.com</code>.
-    Tracking params (<code>s</code>, <code>t</code>, <code>ref_src</code>,
-    <code>ref_url</code>, <code>cxt</code>) are stripped.
+    <strong>X hosts</strong>: <code>x.com</code>, <code>twitter.com</code>,
+    <code>mobile.twitter.com</code>, <code>m.x.com</code> — rewritten to
+    <code>xcancel.com</code> with tracking params
+    (<code>s</code>, <code>t</code>, <code>ref_src</code>,
+    <code>ref_url</code>, <code>cxt</code>) stripped.<br>
+    <strong>Other URLs</strong>: prefixed with
+    <code>https://web.archive.org/web/</code>; Wayback redirects to the
+    latest snapshot, or offers Save Page Now if none exists.
   </footer>
 </main>
 
@@ -168,22 +213,24 @@
     "twitter.com", "www.twitter.com", "mobile.twitter.com",
   ]);
   const TRACKING_PARAMS = ["s", "t", "ref_src", "ref_url", "cxt"];
+  const WAYBACK_PREFIX = "https://web.archive.org/web/";
 
-  function convert(raw) {
-    const trimmed = raw.trim();
-    if (!trimmed) return { ok: false, error: "" };
-    const withScheme = /^https?:\/\//i.test(trimmed)
-      ? trimmed
-      : "https://" + trimmed;
+  function route(raw) {
+    const t = raw.trim();
+    if (!t) return { ok: false, error: "" };
+    const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : "https://" + t;
     let url;
     try { url = new URL(withScheme); }
     catch { return { ok: false, error: "Not a valid URL" }; }
-    if (!X_HOSTS.has(url.hostname.toLowerCase()))
-      return { ok: false, error: "Unsupported host: " + url.hostname };
-    url.hostname = "xcancel.com";
-    url.protocol = "https:";
-    for (const p of TRACKING_PARAMS) url.searchParams.delete(p);
-    return { ok: true, value: url.toString() };
+    if (url.protocol !== "http:" && url.protocol !== "https:")
+      return { ok: false, error: "Only http(s) URLs are supported" };
+    if (X_HOSTS.has(url.hostname.toLowerCase())) {
+      url.hostname = "xcancel.com";
+      url.protocol = "https:";
+      for (const p of TRACKING_PARAMS) url.searchParams.delete(p);
+      return { ok: true, kind: "X post", value: url.toString() };
+    }
+    return { ok: true, kind: "Web page", value: WAYBACK_PREFIX + url.toString() };
   }
 
   const input = document.getElementById("input");
@@ -192,21 +239,26 @@
   const copyBtn = document.getElementById("copyBtn");
   const copyStatus = document.getElementById("copyStatus");
   const openLink = document.getElementById("openLink");
+  const kindBadge = document.getElementById("kind");
 
   function render() {
-    const result = convert(input.value);
+    const result = route(input.value);
     if (result.ok) {
       output.value = result.value;
       inputStatus.textContent = "";
       copyBtn.disabled = false;
       openLink.href = result.value;
       openLink.hidden = false;
+      kindBadge.textContent = result.kind;
+      kindBadge.hidden = false;
     } else {
       output.value = "";
       inputStatus.textContent = result.error;
       copyBtn.disabled = true;
       openLink.hidden = true;
       openLink.removeAttribute("href");
+      kindBadge.hidden = true;
+      kindBadge.textContent = "";
     }
     copyStatus.textContent = "";
   }
