@@ -121,6 +121,18 @@
     color: var(--fg);
     border-color: var(--border);
   }
+  .btn-mini {
+    font: inherit;
+    font-size: .8rem;
+    font-weight: 500;
+    min-height: 32px;
+    padding: .25rem .8rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+  }
   .badge {
     display: inline-block;
     font-size: .75rem;
@@ -132,6 +144,36 @@
     letter-spacing: .02em;
   }
   .badge[hidden] { display: none; }
+  .radio-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem .9rem;
+    background: var(--panel);
+    padding: .55rem .8rem;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  .radio-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .9rem;
+    color: var(--fg);
+    cursor: pointer;
+    min-height: 28px;
+  }
+  .auto-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .9rem;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    margin-left: auto;
+    min-height: 32px;
+  }
+  .auto-copy input { width: 16px; height: 16px; }
   .status {
     font-size: .85rem;
     min-height: 1.2em;
@@ -140,12 +182,14 @@
   .status.error { color: var(--error); }
   .status.ok { color: var(--ok); }
   section { margin-bottom: 1.25rem; }
+  section[hidden] { display: none; }
   footer {
     margin-top: 2rem;
     color: var(--muted);
     font-size: .8rem;
-    line-height: 1.5;
+    line-height: 1.55;
   }
+  footer p { margin: .5rem 0; }
   code {
     background: var(--panel);
     padding: 1px 5px;
@@ -153,10 +197,23 @@
     font-size: .85em;
     word-break: break-all;
   }
+  .bm {
+    display: inline-block;
+    padding: .3rem .7rem;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    cursor: grab;
+    font-weight: 600;
+    background: var(--panel);
+  }
+  .bm:active { cursor: grabbing; }
   @media (max-width: 380px) {
     body { padding: 1rem .75rem; }
     h1 { font-size: 1.25rem; }
     .row .btn, .row button { flex: 1 1 auto; }
+    .auto-copy { margin-left: 0; flex-basis: 100%; }
   }
 </style>
 </head>
@@ -165,19 +222,30 @@
   <h1>Link converter</h1>
   <p class="sub">
     Paste an X (Twitter) post or any web/news article URL.
-    X links become <code>xcancel.com</code>; everything else gets a
-    Wayback Machine snapshot link.
+    X links become <code>xcancel.com</code>, other URLs get a Wayback
+    Machine link, and already-mirrored links unwrap back to the original.
   </p>
 
   <section>
     <div class="label-row">
       <label for="input">URL</label>
+      <button id="pasteBtn" class="btn-mini" type="button">Paste</button>
     </div>
     <textarea id="input" autofocus
-      type="url" inputmode="url"
-      autocapitalize="off" autocorrect="off" spellcheck="false"
+      inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
       placeholder="https://x.com/user/status/… or https://example.com/article"></textarea>
     <div id="inputStatus" class="status error" role="alert"></div>
+  </section>
+
+  <section id="waybackOptions" hidden>
+    <div class="label-row">
+      <label>Wayback mode</label>
+    </div>
+    <div class="radio-row" role="radiogroup" aria-label="Wayback mode">
+      <label><input type="radio" name="wayback" value="latest" checked> Latest snapshot</label>
+      <label><input type="radio" name="wayback" value="save"> Save Page Now</label>
+      <label><input type="radio" name="wayback" value="calendar"> Calendar view</label>
+    </div>
   </section>
 
   <section>
@@ -191,19 +259,39 @@
       <button id="copyBtn" type="button" disabled>Copy</button>
       <a id="openLink" class="btn secondary" hidden
          target="_blank" rel="noopener noreferrer">Open</a>
+      <label class="auto-copy" title="Automatically copy after each conversion">
+        <input id="autoCopy" type="checkbox"> Auto-copy
+      </label>
       <span id="copyStatus" class="status ok" style="margin-top:0;"></span>
     </div>
   </section>
 
   <footer>
-    <strong>X hosts</strong>: <code>x.com</code>, <code>twitter.com</code>,
-    <code>mobile.twitter.com</code>, <code>m.x.com</code> — rewritten to
-    <code>xcancel.com</code> with tracking params
-    (<code>s</code>, <code>t</code>, <code>ref_src</code>,
-    <code>ref_url</code>, <code>cxt</code>) stripped.<br>
-    <strong>Other URLs</strong>: prefixed with
-    <code>https://web.archive.org/web/</code>; Wayback redirects to the
-    latest snapshot, or offers Save Page Now if none exists.
+    <p>
+      <strong>X hosts</strong> (<code>x.com</code>, <code>twitter.com</code>,
+      <code>mobile.twitter.com</code>, <code>m.x.com</code>) are rewritten
+      to <code>xcancel.com</code> with tracking params
+      (<code>s</code>, <code>t</code>, <code>ref_src</code>,
+      <code>ref_url</code>, <code>cxt</code>) stripped.
+    </p>
+    <p>
+      <strong>Other URLs</strong> are wrapped with
+      <code>https://web.archive.org/web/</code> (or <code>/save/</code>,
+      <code>/web/*/</code>).
+    </p>
+    <p>
+      <strong>Mirrored URLs unwrap</strong>: paste a
+      <code>web.archive.org/web/…</code> or <code>xcancel.com</code> link
+      to get the original back.
+    </p>
+    <p>
+      <strong>Bookmarklet</strong>: drag
+      <a id="bookmarklet" class="bm" href="javascript:void(0)">Convert this page</a>
+      to your bookmarks bar to convert whatever page you're on.
+    </p>
+    <p>
+      Tip: link to <code>?u=&lt;url&gt;</code> to pre-fill the input.
+    </p>
   </footer>
 </main>
 
@@ -212,37 +300,105 @@
     "x.com", "www.x.com", "m.x.com",
     "twitter.com", "www.twitter.com", "mobile.twitter.com",
   ]);
+  const XCANCEL_HOSTS = new Set(["xcancel.com", "www.xcancel.com"]);
   const TRACKING_PARAMS = ["s", "t", "ref_src", "ref_url", "cxt"];
-  const WAYBACK_PREFIX = "https://web.archive.org/web/";
+  const WAYBACK_RE =
+    /^https?:\/\/web\.archive\.org\/(?:web|save)\/(?:[^\/]+\/)?(https?:\/\/.+)$/i;
 
-  function route(raw) {
+  function route(raw, waybackMode) {
     const t = raw.trim();
     if (!t) return { ok: false, error: "" };
     const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : "https://" + t;
+
+    const wb = withScheme.match(WAYBACK_RE);
+    if (wb) return { ok: true, kind: "Unwrapped", value: wb[1] };
+
     let url;
     try { url = new URL(withScheme); }
     catch { return { ok: false, error: "Not a valid URL" }; }
     if (url.protocol !== "http:" && url.protocol !== "https:")
       return { ok: false, error: "Only http(s) URLs are supported" };
-    if (X_HOSTS.has(url.hostname.toLowerCase())) {
+
+    const host = url.hostname.toLowerCase();
+
+    if (XCANCEL_HOSTS.has(host)) {
+      url.hostname = "x.com";
+      url.protocol = "https:";
+      return { ok: true, kind: "Unwrapped X", value: url.toString() };
+    }
+
+    if (X_HOSTS.has(host)) {
       url.hostname = "xcancel.com";
       url.protocol = "https:";
       for (const p of TRACKING_PARAMS) url.searchParams.delete(p);
       return { ok: true, kind: "X post", value: url.toString() };
     }
-    return { ok: true, kind: "Web page", value: WAYBACK_PREFIX + url.toString() };
+
+    let prefix;
+    switch (waybackMode) {
+      case "save":     prefix = "https://web.archive.org/save/"; break;
+      case "calendar": prefix = "https://web.archive.org/web/*/"; break;
+      default:         prefix = "https://web.archive.org/web/";
+    }
+    return { ok: true, kind: "Web page", value: prefix + url.toString() };
   }
 
-  const input = document.getElementById("input");
-  const output = document.getElementById("output");
-  const inputStatus = document.getElementById("inputStatus");
-  const copyBtn = document.getElementById("copyBtn");
-  const copyStatus = document.getElementById("copyStatus");
-  const openLink = document.getElementById("openLink");
-  const kindBadge = document.getElementById("kind");
+  const input        = document.getElementById("input");
+  const output       = document.getElementById("output");
+  const inputStatus  = document.getElementById("inputStatus");
+  const copyBtn      = document.getElementById("copyBtn");
+  const copyStatus   = document.getElementById("copyStatus");
+  const openLink     = document.getElementById("openLink");
+  const kindBadge    = document.getElementById("kind");
+  const pasteBtn     = document.getElementById("pasteBtn");
+  const autoCopy     = document.getElementById("autoCopy");
+  const wbOptions    = document.getElementById("waybackOptions");
+  const wbRadios     = document.querySelectorAll('input[name="wayback"]');
+  const bookmarklet  = document.getElementById("bookmarklet");
+
+  // Restore preferences
+  autoCopy.checked = localStorage.getItem("autoCopy") === "1";
+  const savedMode = localStorage.getItem("waybackMode");
+  if (savedMode) {
+    for (const r of wbRadios) if (r.value === savedMode) r.checked = true;
+  }
+
+  function currentMode() {
+    for (const r of wbRadios) if (r.checked) return r.value;
+    return "latest";
+  }
+
+  let lastValue = "";
+  let copyTimer = 0;
+
+  function flashCopied(msg) {
+    copyStatus.textContent = msg || "Copied!";
+    clearTimeout(flashCopied._t);
+    flashCopied._t = setTimeout(() => { copyStatus.textContent = ""; }, 1200);
+  }
+
+  async function writeClipboard(value) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      try {
+        output.select();
+        return document.execCommand("copy");
+      } catch { return false; }
+    }
+  }
+
+  function scheduleAutoCopy(value) {
+    clearTimeout(copyTimer);
+    if (!autoCopy.checked || !value) return;
+    copyTimer = setTimeout(async () => {
+      if (await writeClipboard(value)) flashCopied("Auto-copied");
+    }, 500);
+  }
 
   function render() {
-    const result = route(input.value);
+    const result = route(input.value, currentMode());
     if (result.ok) {
       output.value = result.value;
       inputStatus.textContent = "";
@@ -251,6 +407,11 @@
       openLink.hidden = false;
       kindBadge.textContent = result.kind;
       kindBadge.hidden = false;
+      wbOptions.hidden = result.kind !== "Web page";
+      if (result.value !== lastValue) {
+        lastValue = result.value;
+        scheduleAutoCopy(result.value);
+      }
     } else {
       output.value = "";
       inputStatus.textContent = result.error;
@@ -259,8 +420,10 @@
       openLink.removeAttribute("href");
       kindBadge.hidden = true;
       kindBadge.textContent = "";
+      wbOptions.hidden = true;
+      lastValue = "";
+      clearTimeout(copyTimer);
     }
-    copyStatus.textContent = "";
   }
 
   input.addEventListener("input", render);
@@ -268,16 +431,43 @@
 
   copyBtn.addEventListener("click", async () => {
     if (!output.value) return;
-    try {
-      await navigator.clipboard.writeText(output.value);
-      copyStatus.textContent = "Copied!";
-    } catch {
-      output.select();
-      document.execCommand("copy");
-      copyStatus.textContent = "Copied!";
-    }
-    setTimeout(() => { copyStatus.textContent = ""; }, 1200);
+    if (await writeClipboard(output.value)) flashCopied();
   });
+
+  pasteBtn.addEventListener("click", async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) { input.value = text; render(); input.focus(); }
+    } catch {
+      input.focus();
+      inputStatus.textContent = "Clipboard read blocked — paste manually.";
+    }
+  });
+
+  autoCopy.addEventListener("change", () => {
+    localStorage.setItem("autoCopy", autoCopy.checked ? "1" : "0");
+    if (autoCopy.checked && output.value) scheduleAutoCopy(output.value);
+  });
+
+  for (const r of wbRadios) {
+    r.addEventListener("change", () => {
+      localStorage.setItem("waybackMode", r.value);
+      render();
+    });
+  }
+
+  // Bookmarklet pointing back at this page
+  const here = location.origin + location.pathname;
+  bookmarklet.href =
+    "javascript:void(window.open(" + JSON.stringify(here) +
+    "+'?u='+encodeURIComponent(location.href),'_blank'))";
+
+  // ?u= URL param prefill
+  const initialU = new URLSearchParams(location.search).get("u");
+  if (initialU) {
+    input.value = initialU;
+    render();
+  }
 </script>
 </body>
 </html>
