@@ -1,0 +1,27 @@
+{
+  "name": "Link converter",
+  "short_name": "Convert link",
+  "description": "Convert X links to XCancel and other URLs to Wayback Machine snapshots. Also unwraps mirrors, AMP, and routes YouTube/Reddit/Medium to privacy frontends.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "u"
+    }
+  }
+}

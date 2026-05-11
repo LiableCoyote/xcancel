@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f1419" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
 <title>Link converter — XCancel & Wayback</title>
 <style>
   :root {
@@ -142,6 +145,7 @@
     padding: .15rem .55rem;
     border-radius: 999px;
     letter-spacing: .02em;
+    white-space: nowrap;
   }
   .badge[hidden] { display: none; }
   .radio-row {
@@ -180,9 +184,53 @@
     margin-top: .4rem;
   }
   .status.error { color: var(--error); }
-  .status.ok { color: var(--ok); }
+  .status.ok    { color: var(--ok); }
+  .status.info  { color: var(--muted); }
   section { margin-bottom: 1.25rem; }
   section[hidden] { display: none; }
+  details { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: .5rem .75rem; }
+  details > summary {
+    cursor: pointer;
+    font-size: .9rem;
+    color: var(--muted);
+    list-style: none;
+    padding: .25rem 0;
+  }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::after { content: " ▾"; }
+  details[open] > summary::after { content: " ▴"; }
+  .history-list {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    margin: .5rem 0;
+  }
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    width: 100%;
+    text-align: left;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: .45rem .65rem;
+    min-height: 36px;
+    font: inherit;
+    font-size: .85rem;
+    font-weight: 400;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .history-item .hi-url {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .8rem;
+  }
   footer {
     margin-top: 2rem;
     color: var(--muted);
@@ -221,10 +269,18 @@
 <main>
   <h1>Link converter</h1>
   <p class="sub">
-    Paste an X (Twitter) post or any web/news article URL.
-    X links become <code>xcancel.com</code>, other URLs get a Wayback
-    Machine link, and already-mirrored links unwrap back to the original.
+    Routes X → <code>xcancel.com</code>, YouTube → Invidious, Reddit → Redlib,
+    Medium → Scribe, and anything else → Wayback Machine. Unwraps mirrored
+    and AMP URLs back to the original.
   </p>
+
+  <section id="historyPanel" hidden>
+    <details>
+      <summary>Recent conversions</summary>
+      <div id="historyList" class="history-list"></div>
+      <button id="clearHistoryBtn" class="btn-mini" type="button">Clear history</button>
+    </details>
+  </section>
 
   <section>
     <div class="label-row">
@@ -255,6 +311,7 @@
     </div>
     <textarea id="output" readonly spellcheck="false"
       placeholder="The converted link will appear here"></textarea>
+    <div id="waybackInfo" class="status info" hidden></div>
     <div class="row">
       <button id="copyBtn" type="button" disabled>Copy</button>
       <a id="openLink" class="btn secondary" hidden
@@ -268,47 +325,82 @@
 
   <footer>
     <p>
-      <strong>X hosts</strong> (<code>x.com</code>, <code>twitter.com</code>,
-      <code>mobile.twitter.com</code>, <code>m.x.com</code>) are rewritten
-      to <code>xcancel.com</code> with tracking params
-      (<code>s</code>, <code>t</code>, <code>ref_src</code>,
-      <code>ref_url</code>, <code>cxt</code>) stripped.
+      <strong>Routes</strong>:
+      X (<code>x.com</code>, <code>twitter.com</code>, <code>mobile.twitter.com</code>) → <code>xcancel.com</code>;
+      YouTube → <code>yewtu.be</code>;
+      Reddit → <code>redlib.catsarch.com</code>;
+      Medium → <code>scribe.rip</code>;
+      everything else → <code>web.archive.org</code>.
+      Tracking params (<code>utm_*</code>, <code>fbclid</code>,
+      <code>gclid</code>, <code>s</code>, <code>t</code>, <code>igshid</code>, …)
+      are stripped.
     </p>
     <p>
-      <strong>Other URLs</strong> are wrapped with
-      <code>https://web.archive.org/web/</code> (or <code>/save/</code>,
-      <code>/web/*/</code>).
-    </p>
-    <p>
-      <strong>Mirrored URLs unwrap</strong>: paste a
-      <code>web.archive.org/web/…</code> or <code>xcancel.com</code> link
-      to get the original back.
+      <strong>Unwraps</strong>: <code>xcancel.com</code>,
+      <code>web.archive.org/web|save/…</code>, Google AMP cache
+      (<code>www.google.com/amp/s/…</code>, <code>cdn.ampproject.org/c/s/…</code>)
+      back to the original URL.
     </p>
     <p>
       <strong>Bookmarklet</strong>: drag
       <a id="bookmarklet" class="bm" href="javascript:void(0)">Convert this page</a>
-      to your bookmarks bar to convert whatever page you're on.
-    </p>
-    <p>
-      Tip: link to <code>?u=&lt;url&gt;</code> to pre-fill the input.
+      to your bookmarks bar. Also installs as a PWA with a share target on
+      mobile.
     </p>
   </footer>
 </main>
 
 <script>
+  // ---------- routing ----------
   const X_HOSTS = new Set([
     "x.com", "www.x.com", "m.x.com",
     "twitter.com", "www.twitter.com", "mobile.twitter.com",
   ]);
   const XCANCEL_HOSTS = new Set(["xcancel.com", "www.xcancel.com"]);
-  const TRACKING_PARAMS = ["s", "t", "ref_src", "ref_url", "cxt"];
+  const YT_HOSTS = new Set([
+    "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+  ]);
+  const YT_SHORT_HOSTS = new Set(["youtu.be", "www.youtu.be"]);
+  const REDDIT_HOSTS = new Set([
+    "reddit.com", "www.reddit.com", "old.reddit.com",
+    "np.reddit.com", "new.reddit.com", "amp.reddit.com",
+  ]);
+  const TRACKING_PARAMS = [
+    "s", "t", "ref_src", "ref_url", "cxt",
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+    "fbclid", "gclid", "mc_cid", "mc_eid", "igshid", "si",
+  ];
+  const INVIDIOUS = "yewtu.be";
+  const REDLIB = "redlib.catsarch.com";
+  const SCRIBE = "scribe.rip";
   const WAYBACK_RE =
     /^https?:\/\/web\.archive\.org\/(?:web|save)\/(?:[^\/]+\/)?(https?:\/\/.+)$/i;
+
+  function stripTrackers(url) {
+    for (const p of TRACKING_PARAMS) url.searchParams.delete(p);
+  }
+
+  function unwrapAmp(s) {
+    let m = s.match(/^https?:\/\/www\.google\.com\/amp\/s\/(.+)$/i);
+    if (m) return "https://" + m[1];
+    m = s.match(/^https?:\/\/cdn\.ampproject\.org\/c\/s\/(.+)$/i);
+    if (m) return "https://" + m[1];
+    m = s.match(/^https?:\/\/[^\/]+\.cdn\.ampproject\.org\/[vc]\/s\/(.+)$/i);
+    if (m) return "https://" + m[1];
+    return null;
+  }
 
   function route(raw, waybackMode) {
     const t = raw.trim();
     if (!t) return { ok: false, error: "" };
     const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : "https://" + t;
+
+    const amp = unwrapAmp(withScheme);
+    if (amp) {
+      const sub = route(amp, waybackMode);
+      if (sub.ok) return { ...sub, kind: sub.kind + " (AMP)" };
+      return sub;
+    }
 
     const wb = withScheme.match(WAYBACK_RE);
     if (wb) return { ok: true, kind: "Unwrapped", value: wb[1] };
@@ -322,83 +414,215 @@
     const host = url.hostname.toLowerCase();
 
     if (XCANCEL_HOSTS.has(host)) {
-      url.hostname = "x.com";
-      url.protocol = "https:";
+      url.hostname = "x.com"; url.protocol = "https:";
       return { ok: true, kind: "Unwrapped X", value: url.toString() };
     }
 
     if (X_HOSTS.has(host)) {
-      url.hostname = "xcancel.com";
-      url.protocol = "https:";
-      for (const p of TRACKING_PARAMS) url.searchParams.delete(p);
+      url.hostname = "xcancel.com"; url.protocol = "https:";
+      stripTrackers(url);
       return { ok: true, kind: "X post", value: url.toString() };
     }
 
+    if (YT_HOSTS.has(host)) {
+      url.hostname = INVIDIOUS; url.protocol = "https:";
+      stripTrackers(url);
+      return { ok: true, kind: "YouTube", value: url.toString() };
+    }
+
+    if (YT_SHORT_HOSTS.has(host)) {
+      const id = url.pathname.split("/").filter(Boolean)[0] || "";
+      if (!id) return { ok: false, error: "Missing video ID" };
+      const q = new URLSearchParams({ v: id });
+      const tParam = url.searchParams.get("t");
+      if (tParam) q.set("t", tParam);
+      return { ok: true, kind: "YouTube", value: `https://${INVIDIOUS}/watch?${q.toString()}` };
+    }
+
+    if (REDDIT_HOSTS.has(host)) {
+      url.hostname = REDLIB; url.protocol = "https:";
+      stripTrackers(url);
+      return { ok: true, kind: "Reddit", value: url.toString() };
+    }
+
+    if (host === "medium.com" || host === "www.medium.com") {
+      url.hostname = SCRIBE; url.protocol = "https:";
+      stripTrackers(url);
+      return { ok: true, kind: "Medium", value: url.toString() };
+    }
+    if (host.endsWith(".medium.com")) {
+      const sub = host.slice(0, -".medium.com".length);
+      const tail = url.pathname.startsWith("/") ? url.pathname : "/" + url.pathname;
+      url.hostname = SCRIBE; url.protocol = "https:";
+      url.pathname = "/@" + sub + tail;
+      stripTrackers(url);
+      return { ok: true, kind: "Medium", value: url.toString() };
+    }
+
+    stripTrackers(url);
+    const original = url.toString();
     let prefix;
     switch (waybackMode) {
       case "save":     prefix = "https://web.archive.org/save/"; break;
       case "calendar": prefix = "https://web.archive.org/web/*/"; break;
       default:         prefix = "https://web.archive.org/web/";
     }
-    return { ok: true, kind: "Web page", value: prefix + url.toString() };
+    return { ok: true, kind: "Web page", value: prefix + original, original };
   }
 
-  const input        = document.getElementById("input");
-  const output       = document.getElementById("output");
-  const inputStatus  = document.getElementById("inputStatus");
-  const copyBtn      = document.getElementById("copyBtn");
-  const copyStatus   = document.getElementById("copyStatus");
-  const openLink     = document.getElementById("openLink");
-  const kindBadge    = document.getElementById("kind");
-  const pasteBtn     = document.getElementById("pasteBtn");
-  const autoCopy     = document.getElementById("autoCopy");
-  const wbOptions    = document.getElementById("waybackOptions");
+  // ---------- DOM refs ----------
+  const $ = (id) => document.getElementById(id);
+  const input        = $("input");
+  const output       = $("output");
+  const inputStatus  = $("inputStatus");
+  const copyBtn      = $("copyBtn");
+  const copyStatus   = $("copyStatus");
+  const openLink     = $("openLink");
+  const kindBadge    = $("kind");
+  const pasteBtn     = $("pasteBtn");
+  const autoCopy     = $("autoCopy");
+  const wbOptions    = $("waybackOptions");
   const wbRadios     = document.querySelectorAll('input[name="wayback"]');
-  const bookmarklet  = document.getElementById("bookmarklet");
+  const bookmarklet  = $("bookmarklet");
+  const waybackInfo  = $("waybackInfo");
+  const historyPanel = $("historyPanel");
+  const historyList  = $("historyList");
+  const clearHistoryBtn = $("clearHistoryBtn");
 
-  // Restore preferences
+  // ---------- preferences ----------
   autoCopy.checked = localStorage.getItem("autoCopy") === "1";
   const savedMode = localStorage.getItem("waybackMode");
-  if (savedMode) {
-    for (const r of wbRadios) if (r.value === savedMode) r.checked = true;
-  }
+  if (savedMode) for (const r of wbRadios) if (r.value === savedMode) r.checked = true;
 
   function currentMode() {
     for (const r of wbRadios) if (r.checked) return r.value;
     return "latest";
   }
 
-  let lastValue = "";
+  // ---------- clipboard helpers ----------
   let copyTimer = 0;
-
-  function flashCopied(msg) {
+  function flash(msg) {
     copyStatus.textContent = msg || "Copied!";
-    clearTimeout(flashCopied._t);
-    flashCopied._t = setTimeout(() => { copyStatus.textContent = ""; }, 1200);
+    clearTimeout(flash._t);
+    flash._t = setTimeout(() => { copyStatus.textContent = ""; }, 1200);
   }
-
   async function writeClipboard(value) {
-    try {
-      await navigator.clipboard.writeText(value);
-      return true;
-    } catch {
-      try {
-        output.select();
-        return document.execCommand("copy");
-      } catch { return false; }
+    try { await navigator.clipboard.writeText(value); return true; }
+    catch {
+      try { output.select(); return document.execCommand("copy"); }
+      catch { return false; }
     }
   }
-
   function scheduleAutoCopy(value) {
     clearTimeout(copyTimer);
     if (!autoCopy.checked || !value) return;
     copyTimer = setTimeout(async () => {
-      if (await writeClipboard(value)) flashCopied("Auto-copied");
+      if (await writeClipboard(value)) flash("Auto-copied");
     }, 500);
   }
 
+  // ---------- Wayback availability ----------
+  let availToken = 0;
+  let availTimer = 0;
+  const availCache = new Map();
+  function escapeHtml(s) {
+    return s.replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  }
+  function formatTs(d) {
+    return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  }
+  function showAvail(res, token) {
+    if (token !== availToken) return;
+    if (!res) { waybackInfo.hidden = true; return; }
+    if (res.available) {
+      waybackInfo.textContent = `Latest snapshot: ${formatTs(res.ts)}`;
+    } else {
+      waybackInfo.innerHTML = "No snapshot yet — select <strong>Save Page Now</strong> to create one.";
+    }
+    waybackInfo.hidden = false;
+  }
+  function scheduleAvailability(originalUrl, mode) {
+    clearTimeout(availTimer);
+    availToken++;
+    if (!originalUrl) { waybackInfo.hidden = true; return; }
+    if (mode === "save") {
+      waybackInfo.textContent = "Will create a fresh snapshot when opened.";
+      waybackInfo.hidden = false;
+      return;
+    }
+    if (availCache.has(originalUrl)) {
+      showAvail(availCache.get(originalUrl), availToken);
+      return;
+    }
+    const myToken = availToken;
+    waybackInfo.textContent = "Checking snapshot…";
+    waybackInfo.hidden = false;
+    availTimer = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `https://archive.org/wayback/available?url=${encodeURIComponent(originalUrl)}`,
+          { cache: "no-store" }
+        );
+        const data = await r.json();
+        const c = data && data.archived_snapshots && data.archived_snapshots.closest;
+        const res = c && c.available
+          ? { available: true, ts: c.timestamp }
+          : { available: false };
+        availCache.set(originalUrl, res);
+        showAvail(res, myToken);
+      } catch {
+        if (myToken === availToken) waybackInfo.hidden = true;
+      }
+    }, 600);
+  }
+
+  // ---------- history ----------
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem("history") || "[]"); }
+    catch { return []; }
+  }
+  function pushHistory(entry) {
+    const list = getHistory().filter((h) => h.input !== entry.input);
+    list.unshift(entry);
+    localStorage.setItem("history", JSON.stringify(list.slice(0, 10)));
+  }
+  function renderHistory() {
+    const items = getHistory();
+    if (items.length === 0) { historyPanel.hidden = true; return; }
+    historyPanel.hidden = false;
+    historyList.innerHTML = "";
+    for (const h of items) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "history-item";
+      btn.innerHTML =
+        `<span class="badge">${escapeHtml(h.kind)}</span>` +
+        `<span class="hi-url">${escapeHtml(h.input)}</span>`;
+      btn.addEventListener("click", () => {
+        skipNextHistory = true;
+        input.value = h.input;
+        render();
+        input.focus();
+      });
+      historyList.appendChild(btn);
+    }
+  }
+  let historyTimer = 0;
+  let skipNextHistory = false;
+  function scheduleHistory(entry) {
+    clearTimeout(historyTimer);
+    if (skipNextHistory) { skipNextHistory = false; return; }
+    historyTimer = setTimeout(() => {
+      pushHistory(entry);
+      renderHistory();
+    }, 1500);
+  }
+
+  // ---------- main render ----------
+  let lastValue = "";
   function render() {
-    const result = route(input.value, currentMode());
+    const raw = input.value;
+    const result = route(raw, currentMode());
     if (result.ok) {
       output.value = result.value;
       inputStatus.textContent = "";
@@ -408,9 +632,17 @@
       kindBadge.textContent = result.kind;
       kindBadge.hidden = false;
       wbOptions.hidden = result.kind !== "Web page";
+      if (result.kind === "Web page" && result.original) {
+        scheduleAvailability(result.original, currentMode());
+      } else {
+        waybackInfo.hidden = true;
+        availToken++;
+        clearTimeout(availTimer);
+      }
       if (result.value !== lastValue) {
         lastValue = result.value;
         scheduleAutoCopy(result.value);
+        scheduleHistory({ input: raw.trim(), output: result.value, kind: result.kind, at: Date.now() });
       }
     } else {
       output.value = "";
@@ -421,8 +653,12 @@
       kindBadge.hidden = true;
       kindBadge.textContent = "";
       wbOptions.hidden = true;
+      waybackInfo.hidden = true;
       lastValue = "";
       clearTimeout(copyTimer);
+      clearTimeout(historyTimer);
+      clearTimeout(availTimer);
+      availToken++;
     }
   }
 
@@ -431,7 +667,7 @@
 
   copyBtn.addEventListener("click", async () => {
     if (!output.value) return;
-    if (await writeClipboard(output.value)) flashCopied();
+    if (await writeClipboard(output.value)) flash();
   });
 
   pasteBtn.addEventListener("click", async () => {
@@ -456,17 +692,37 @@
     });
   }
 
-  // Bookmarklet pointing back at this page
+  clearHistoryBtn.addEventListener("click", () => {
+    localStorage.removeItem("history");
+    renderHistory();
+  });
+
+  // ---------- bookmarklet href ----------
   const here = location.origin + location.pathname;
   bookmarklet.href =
     "javascript:void(window.open(" + JSON.stringify(here) +
     "+'?u='+encodeURIComponent(location.href),'_blank'))";
 
-  // ?u= URL param prefill
-  const initialU = new URLSearchParams(location.search).get("u");
-  if (initialU) {
-    input.value = initialU;
+  // ---------- service worker ----------
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+
+  // ---------- initial population (?u=, share target) ----------
+  renderHistory();
+  const sp = new URLSearchParams(location.search);
+  let initial = sp.get("u") || sp.get("url");
+  if (!initial) {
+    const text = sp.get("text");
+    if (text) {
+      const m = text.match(/https?:\/\/\S+/);
+      initial = m ? m[0] : text.trim();
+    }
+  }
+  if (initial) {
+    input.value = initial;
     render();
+    history.replaceState(null, "", location.pathname);
   }
 </script>
 </body>
