@@ -1,32 +1,58 @@
-const CACHE = "xc-v1";
-const ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg"];
+const CACHE = "xc-v2";
+const SHELL  = ["./", "./index.html", "./manifest.json"];
+const ASSETS = ["./style.css", "./app.js", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  event.waitUntil((async () => {
+    const c = await caches.open(CACHE);
+    await c.addAll([...SHELL, ...ASSETS]);
+  })());
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
+function isShell(req) {
+  if (req.mode === "navigate") return true;
+  const u = new URL(req.url);
+  return u.pathname.endsWith("/")
+      || u.pathname.endsWith("/index.html")
+      || u.pathname.endsWith("/manifest.json");
+}
+
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (url.origin !== location.origin) return;
-  if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((resp) => {
-        const copy = resp.clone();
-        caches.open(CACHE).then((c) => c.put(event.request, copy)).catch(() => {});
-        return resp;
-      }).catch(() => cached);
-    })
-  );
+  const req = event.request;
+  if (req.method !== "GET") return;
+  const u = new URL(req.url);
+  if (u.origin !== location.origin) return;
+
+  if (isShell(req)) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req);
+        const c = await caches.open(CACHE);
+        c.put(req, fresh.clone()).catch(() => {});
+        return fresh;
+      } catch {
+        const cached = await caches.match(req);
+        return cached || caches.match("./index.html");
+      }
+    })());
+    return;
+  }
+
+  event.respondWith((async () => {
+    const cached = await caches.match(req);
+    if (cached) return cached;
+    const fresh = await fetch(req);
+    const c = await caches.open(CACHE);
+    c.put(req, fresh.clone()).catch(() => {});
+    return fresh;
+  })());
 });

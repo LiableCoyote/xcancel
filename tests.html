@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./style.css">
+<script src="./app.js" defer></script>
+<title>Route table tests</title>
+<style>
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  td.pass { color: var(--ok); font-weight: 600; }
+  td.fail { color: var(--error); font-weight: 600; }
+  td code { display: inline-block; max-width: 100%; word-break: break-all; }
+  #summary { padding: .75rem 1rem; border-radius: 12px; font-weight: 600; margin-bottom: 1rem; }
+  #summary.ok   { background: #00ba7c22; color: var(--ok); }
+  #summary.fail { background: #f4212e22; color: var(--error); }
+  .diff { color: var(--muted); font-size: .8em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Route table tests</h1>
+  <p class="sub">Runs <code>route()</code> against a frozen table. Open this page after any edit to <code>app.js</code>.</p>
+  <div id="summary">Loading…</div>
+  <table>
+    <thead><tr><th>Input</th><th>Mode</th><th>Expected</th><th>Result</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</main>
+<script>
+  // Each row: [input, mode, expectedKind, expectedValue]
+  // expectedValue null = error expected (any error message acceptable).
+  const CASES = [
+    ["https://x.com/jack/status/20", "latest",
+      "X post", "https://xcancel.com/jack/status/20"],
+    ["https://twitter.com/jack/status/20?s=20&t=abc&utm_source=foo", "latest",
+      "X post", "https://xcancel.com/jack/status/20"],
+    ["https://mobile.twitter.com/jack", "latest",
+      "X post", "https://xcancel.com/jack"],
+    ["https://xcancel.com/jack/status/20", "latest",
+      "Unwrapped X", "https://x.com/jack/status/20"],
+
+    ["https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=abc", "latest",
+      "YouTube", "https://yewtu.be/watch?v=dQw4w9WgXcQ"],
+    ["https://youtu.be/dQw4w9WgXcQ?t=42", "latest",
+      "YouTube", "https://yewtu.be/watch?v=dQw4w9WgXcQ&t=42"],
+    ["https://m.youtube.com/watch?v=abc", "latest",
+      "YouTube", "https://yewtu.be/watch?v=abc"],
+    ["https://music.youtube.com/watch?v=abc", "latest",
+      "YouTube", "https://yewtu.be/watch?v=abc"],
+    ["youtu.be/abc?t=10", "latest",
+      "YouTube", "https://yewtu.be/watch?v=abc&t=10"],
+
+    ["https://www.reddit.com/r/programming/comments/xyz/title/?utm_source=share", "latest",
+      "Reddit", "https://redlib.catsarch.com/r/programming/comments/xyz/title/"],
+    ["https://old.reddit.com/r/aww", "latest",
+      "Reddit", "https://redlib.catsarch.com/r/aww"],
+
+    ["https://medium.com/@user/article-id", "latest",
+      "Medium", "https://scribe.rip/@user/article-id"],
+    ["https://towardsdatascience.medium.com/article", "latest",
+      "Medium", "https://scribe.rip/@towardsdatascience/article"],
+    ["https://towardsdatascience.medium.com/article?utm_source=newsletter", "latest",
+      "Medium", "https://scribe.rip/@towardsdatascience/article"],
+
+    ["https://www.google.com/amp/s/www.bbc.com/news/world-12345.amp", "latest",
+      "Web page (AMP)", "https://web.archive.org/web/https://www.bbc.com/news/world-12345.amp"],
+    ["https://cdn.ampproject.org/c/s/www.nytimes.com/2024/01/01/foo.amp.html", "latest",
+      "Web page (AMP)", "https://web.archive.org/web/https://www.nytimes.com/2024/01/01/foo.amp.html"],
+    ["https://www-bbc-com.cdn.ampproject.org/c/s/www.bbc.com/news/foo", "latest",
+      "Web page (AMP)", "https://web.archive.org/web/https://www.bbc.com/news/foo"],
+    ["https://www.google.com/amp/s/x.com/jack/status/20", "latest",
+      "X post (AMP)", "https://xcancel.com/jack/status/20"],
+
+    ["https://web.archive.org/web/https://example.com/foo", "latest",
+      "Unwrapped", "https://example.com/foo"],
+    ["https://web.archive.org/web/20240101000000/https://example.com/foo", "latest",
+      "Unwrapped", "https://example.com/foo"],
+    ["https://web.archive.org/save/https://example.com/foo", "latest",
+      "Unwrapped", "https://example.com/foo"],
+
+    ["https://nytimes.com/2026/04/27/foo?utm_source=twitter&fbclid=abc", "latest",
+      "Web page", "https://web.archive.org/web/https://nytimes.com/2026/04/27/foo"],
+    ["https://nytimes.com/2026/04/27/foo", "save",
+      "Web page", "https://web.archive.org/save/https://nytimes.com/2026/04/27/foo"],
+    ["https://nytimes.com/2026/04/27/foo", "calendar",
+      "Web page", "https://web.archive.org/web/*/https://nytimes.com/2026/04/27/foo"],
+    ["nytimes.com/2026/04/27/foo", "latest",
+      "Web page", "https://web.archive.org/web/https://nytimes.com/2026/04/27/foo"],
+
+    ["javascript:alert(1)", "latest", null, null],
+    ["not a url", "latest", null, null],
+    ["mailto:a@b.com", "latest", null, null],
+    ["", "latest", null, null],
+  ];
+
+  function escape(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  function run() {
+    const route = window.__test && window.__test.route;
+    const tbody = document.getElementById("tbody");
+    const summary = document.getElementById("summary");
+    if (!route) {
+      summary.textContent = "FAIL — window.__test.route not exposed.";
+      summary.className = "fail";
+      return;
+    }
+    let pass = 0, fail = 0;
+    for (const [input, mode, expKind, expVal] of CASES) {
+      const r = route(input, mode);
+      const tr = document.createElement("tr");
+      const expectErr = expKind === null && expVal === null;
+      let ok, got;
+      if (expectErr) {
+        ok = !r.ok;
+        got = r.ok ? `[${r.kind}] ${r.value}` : `ERROR ${r.error || "(empty)"}`;
+      } else {
+        ok = r.ok && r.kind === expKind && r.value === expVal;
+        got = r.ok ? `[${r.kind}] ${r.value}` : `ERROR ${r.error || "(empty)"}`;
+      }
+      if (ok) pass++; else fail++;
+      tr.innerHTML =
+        `<td><code>${escape(input)}</code></td>` +
+        `<td>${escape(mode)}</td>` +
+        `<td>${expectErr ? "<em>error</em>" : `<code>[${escape(expKind)}] ${escape(expVal)}</code>`}</td>` +
+        `<td class="${ok ? "pass" : "fail"}">${ok ? "PASS" : "FAIL"}` +
+        (ok ? "" : `<div class="diff"><code>${escape(got)}</code></div>`) +
+        `</td>`;
+      tbody.appendChild(tr);
+    }
+    summary.textContent = `${pass} passed, ${fail} failed (${CASES.length} total)`;
+    summary.className = fail === 0 ? "ok" : "fail";
+  }
+
+  document.addEventListener("DOMContentLoaded", run);
+</script>
+</body>
+</html>
